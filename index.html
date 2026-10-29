@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manga JP → ID</title>
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#eceef1;--ink:#15171c;--mut:#5d6370;--ac:#2f36e0;--card:#fff;--bd:#cfd3da}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);background-image:radial-gradient(#d3d7de 1px,transparent 1.2px);background-size:9px 9px;color:var(--ink);font:16px/1.5 "Zen Kaku Gothic New",system-ui,sans-serif}
+main{max-width:920px;margin:0 auto;padding:32px 18px 80px}
+h1{font:400 clamp(30px,6vw,52px)/1.05 "Dela Gothic One",sans-serif;margin:0 0 6px;letter-spacing:-.01em}
+h1 span{color:var(--ac)}
+.sub{color:var(--mut);margin:0 0 24px;max-width:60ch}
+.drop{display:block;border:3px solid var(--ink);background:var(--card);padding:34px 20px;text-align:center;cursor:pointer;box-shadow:6px 6px 0 var(--ink);transition:transform .12s,box-shadow .12s}
+.drop:hover,.drop.on{transform:translate(2px,2px);box-shadow:4px 4px 0 var(--ink)}
+.drop b{font-size:18px}.drop small{display:block;color:var(--mut)}
+.drop:focus-within{outline:3px solid var(--ac);outline-offset:3px}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0 0 0 0)}
+.row{display:flex;flex-wrap:wrap;gap:14px;align-items:end;margin:22px 0 12px}
+label.f{display:flex;flex-direction:column;font-size:14px;color:var(--mut);gap:4px}
+input[type=number],select{font:inherit;padding:8px 10px;border:2px solid var(--ink);background:#fff;width:110px}
+select{width:auto}
+button{font:700 16px "Zen Kaku Gothic New",sans-serif;padding:11px 20px;border:2px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
+button.alt{background:#fff;color:var(--ink)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+.bar{height:10px;border:2px solid var(--ink);background:#fff;margin-top:14px}
+.bar i{display:block;height:100%;width:0;background:var(--ac)}
+#log{font-size:14px;color:var(--mut);min-height:22px;margin-top:8px}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-top:22px}
+#grid a{display:block;border:2px solid var(--ink);background:#fff;position:relative}
+#grid img{display:block;width:100%}
+#grid span{position:absolute;left:0;top:0;background:var(--ink);color:#fff;font-size:12px;padding:1px 7px}
+.warn{display:none;border:2px solid var(--ink);background:#fff3b0;padding:10px 14px;margin:0 0 18px;font-size:14px}
+.alt-pick{margin-top:12px;font-size:14px;color:var(--mut)}
+.alt-pick input{display:block;margin-top:6px;font:inherit;max-width:100%}
+.note{margin-top:30px;font-size:13px;color:var(--mut);border-top:2px solid var(--ink);padding-top:12px}
+</style>
+</head>
+<body>
+<main>
+<h1>Manga <span>JP → ID</span></h1>
+<p class="sub">Terjemahkan PDF manga Jepang ke Indonesia langsung di browser. Tanpa API, tanpa token, tanpa upload ke server. Teks dipasang di dalam balon dialog.</p>
+
+<div class="warn" id="warn"></div>
+<input type="file" id="file" accept=".pdf,application/pdf" tabindex="-1">
+<div class="drop" id="drop" role="button" tabindex="0">
+  <b id="fname">Klik di sini atau seret PDF manga (sampai 200 MB)</b>
+  <small id="finfo">Disarankan Chrome / Edge di desktop</small>
+</div>
+<div class="alt-pick">Kalau kotak di atas tidak membuka pemilih file, pakai tombol bawaan browser ini:
+  <input type="file" id="file2"></div>
+
+<div class="row">
+  <label class="f">Dari halaman<input type="number" id="from" min="1" value="1"></label>
+  <label class="f">Sampai<input type="number" id="to" min="1" value="1"></label>
+  <label class="f">Resolusi
+    <select id="res"><option value="900">Ultra hemat (900 px)</option><option value="1200">Hemat (1200 px)</option><option value="1600">Normal (1600 px)</option><option value="2000">Tajam (2000 px)</option></select>
+  </label>
+  <button id="go" disabled>Mulai terjemah</button>
+  <button id="dl" class="alt" disabled>Unduh PDF hasil</button>
+</div>
+
+<div class="bar"><i id="pb"></i></div>
+<div id="log" aria-live="polite"></div>
+<div id="grid"></div>
+
+<p class="note">Pertama kali dipakai, model OCR dan terjemahan (±150 MB) diunduh sekali lalu disimpan di cache browser, setelah itu jalan tanpa biaya apa pun. Proses jalan di CPU, jadi satu halaman bisa makan 20–90 detik. Hasil terbaik di manga dengan balon putih yang jelas. Terjemahan lewat jalur JP → EN → ID, jadi anggap hasilnya draf kasar.</p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script type="module">
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+env.allowLocalModels = false;
+
+const $ = s => document.querySelector(s);
+const log = t => $('#log').textContent = t;
+const tick = () => new Promise(r => setTimeout(r, 0));
+const WORKER = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let pdf, fname = 'manga', running = false, stop = false, results = [], M = {};
+
+/* ---------- PDF ---------- */
+async function initPdf() {
+  if (initPdf.ok) return;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = WORKER;   // URL langsung; blob: diblokir di beberapa lingkungan
+  initPdf.ok = 1;
+}
+async function openFile(f) {
+  if (!f) return;
+  if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') { log('File harus berformat PDF.'); return; }
+  log('Membuka PDF…');
+  try {
+    await initPdf();
+    try {   // baca PDF per potongan dari disk, tidak dimuat utuh ke RAM
+      const init = new Uint8Array(await f.slice(0, 65536).arrayBuffer());
+      class FileRange extends pdfjsLib.PDFDataRangeTransport {
+        requestDataRange(b, e) { f.slice(b, e).arrayBuffer().then(buf => this.onDataRange(b, new Uint8Array(buf))); }
+      }
+      pdf = await pdfjsLib.getDocument({ range: new FileRange(f.size, init), length: f.size, disableAutoFetch: true, disableStream: true }).promise;
+    } catch (err) {
+      console.warn('Mode potongan gagal, baca penuh', err);
+      if (IOS && f.size > 150 * 1048576) throw new Error('PDF terlalu besar untuk iPhone/iPad');
+      pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()) }).promise;
+    }
+  } catch (e) { log('PDF gagal dibuka: ' + e.message); return; }
+  fname = f.name.replace(/\.pdf$/i, '');
+  $('#fname').textContent = f.name;
+  $('#finfo').textContent = `${pdf.numPages} halaman · ${(f.size / 1048576).toFixed(1)} MB`;
+  $('#from').value = 1; $('#to').value = pdf.numPages; $('#to').max = pdf.numPages;
+  $('#go').disabled = false; log(IOS ? 'Siap. Di iPhone, mulai dari 1–3 halaman saja.' : 'Siap. Atur rentang halaman lalu mulai.');
+}
+$('#res').value = IOS ? '900' : '1600';
+$('#file').onchange = e => { const f = e.target.files[0]; e.target.value = ''; openFile(f); };
+$('#file2').onchange = e => { const f = e.target.files[0]; e.target.value = ''; openFile(f); };
+(() => {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const local = location.protocol === 'file:' || !location.hostname || location.href.includes('external-file');
+  const w = [];
+  if (local) w.push('Halaman ini dibuka sebagai file lokal. Di HP, browser sering memblokir pemilih file untuk halaman seperti ini. Taruh file ini di hosting https (mis. GitHub Pages / Netlify) atau buka dari desktop.');
+  if (ios) w.push('iPhone/iPad: browser dibatasi memori sekitar 1–1,5 GB, jadi PDF besar plus model terjemahan kemungkinan besar membuat tab crash. Pakai komputer.');
+  if (w.length) { $('#warn').innerHTML = w.join('<br><br>'); $('#warn').style.display = 'block'; }
+})();
+const dz = $('#drop');
+dz.onclick = () => $('#file').click();
+dz.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); } };
+addEventListener('dragover', e => e.preventDefault());   // cegah browser membuka PDF sendiri
+addEventListener('drop', e => { e.preventDefault(); if (e.target !== dz && !dz.contains(e.target)) openFile(e.dataTransfer.files[0]); });
+dz.ondragover = e => { e.preventDefault(); dz.classList.add('on'); };
+dz.ondragleave = () => dz.classList.remove('on');
+dz.ondrop = e => { e.preventDefault(); e.stopPropagation(); dz.classList.remove('on'); openFile(e.dataTransfer.files[0]); };
+
+/* ---------- Model (OCR + terjemah, semua lokal) ---------- */
+const getH = async () => M.h || (M.h = await (async () => {   // worker horizontal dibuat hanya jika perlu
+  const w = await Tesseract.createWorker('jpn', 1, {}); await w.setParameters({ tessedit_pageseg_mode: '6' }); return w;
+})());
+async function loadModels() {
+  if (M.ready) return;
+  log('Menyiapkan OCR Jepang…');
+  M.v = await Tesseract.createWorker('jpn_vert', 1, {});
+  await M.v.setParameters({ tessedit_pageseg_mode: '5' });
+  const cb = p => { if (p.status === 'progress') log(`Mengunduh model ${p.file}: ${Math.round(p.progress)}%`); };
+  M.ja = await pipeline('translation', 'Xenova/opus-mt-ja-en', { progress_callback: cb });
+  M.id = await pipeline('translation', 'Xenova/opus-mt-en-id', { progress_callback: cb });
+  M.ready = 1;
+}
+async function translate(jp) {
+  const en = (await M.ja(jp, { max_length: 256 }))[0].translation_text;
+  return (await M.id(en, { max_length: 256 }))[0].translation_text;
+}
+const JP = /[\u3040-\u30ff\u4e00-\u9fff]/g;
+const cleanJP = s => s.replace(/\s+/g, '').replace(/[|｜_\\\/~]/g, '');
+const isJP = s => { const n = (s.match(JP) || []).length; return n >= 1 && n / s.length > .5; };
+
+/* ---------- Deteksi balon dialog ---------- */
+function detect(cv) {
+  const W = Math.min(720, cv.width), k = W / cv.width, H = Math.round(cv.height * k), N = W * H;
+  const t = document.createElement('canvas'); t.width = W; t.height = H;
+  const x = t.getContext('2d'); x.drawImage(cv, 0, 0, W, H);
+  const d = x.getImageData(0, 0, W, H).data, g = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { const v = d[i*4]*.3 + d[i*4+1]*.59 + d[i*4+2]*.11; g[i] = v > 210 ? 1 : v < 100 ? 2 : 0; }
+  t.width = t.height = 0;
+  const lab = new Int32Array(N), st = new Int32Array(N), out = []; let n = 0;
+  for (let s = 0; s < N; s++) {
+    if (g[s] !== 1 || lab[s]) continue;
+    n++; let sp = 0, a = 0, x0 = W, x1 = 0, y0 = H, y1 = 0, ed = false;
+    st[sp++] = s; lab[s] = n;
+    while (sp) {
+      const p = st[--sp], px = p % W, py = (p / W) | 0; a++;
+      if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py;
+      if (!px || !py || px === W-1 || py === H-1) ed = true;
+      if (px > 0   && g[p-1] === 1 && !lab[p-1]) { lab[p-1] = n; st[sp++] = p-1; }
+      if (px < W-1 && g[p+1] === 1 && !lab[p+1]) { lab[p+1] = n; st[sp++] = p+1; }
+      if (py > 0   && g[p-W] === 1 && !lab[p-W]) { lab[p-W] = n; st[sp++] = p-W; }
+      if (py < H-1 && g[p+W] === 1 && !lab[p+W]) { lab[p+W] = n; st[sp++] = p+W; }
+    }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    if (a < N*.004 || a > N*.3 || (ed && a > N*.06) || bw < W*.05 || bh < H*.03 || a/(bw*bh) < .3) continue;
+    let dk = 0, rows = [];
+    for (let y = y0; y <= y1; y++) {
+      let lo = -1, hi = -1;
+      for (let xx = x0; xx <= x1; xx++) { const q = y*W + xx; if (g[q] === 2) dk++; if (lab[q] === n) { if (lo < 0) lo = xx; hi = xx; } }
+      rows.push([lo, hi]);
+    }
+    if (dk / (bw*bh) < .02) continue;
+    // persegi terbesar yang masih muat di dalam balon (elips/membulat)
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; let best = null, ba = 0;
+    for (let sx = .96; sx >= .4; sx -= .04) for (let sy = .96; sy >= .4; sy -= .04) {
+      const w = bw*sx, h = bh*sy; if (w*h <= ba) continue;
+      const rx0 = cx - w/2, rx1 = cx + w/2, ry0 = Math.ceil(cy - h/2), ry1 = Math.floor(cy + h/2);
+      let ok = true;
+      for (let y = ry0; y <= ry1 && ok; y++) { const r = rows[y - y0]; if (!r || r[0] < 0 || r[0] > rx0 || r[1] < rx1) ok = false; }
+      if (ok) { ba = w*h; best = { x: rx0, y: cy - h/2, w, h }; }
+    }
+    if (!best || best.w < W*.04 || best.h < H*.02) continue;
+    const inv = 1 / k, m = .93;
+    out.push({
+      bx: x0*inv, by: y0*inv, bw: bw*inv, bh: bh*inv,
+      rect: { x: (best.x + best.w*(1-m)/2)*inv, y: (best.y + best.h*(1-m)/2)*inv, w: best.w*m*inv, h: best.h*m*inv },
+      rows: rows.map((r, i) => r[0] < 0 ? null : [(y0+i)*inv, r[0]*inv, (r[1]+1)*inv, inv + 1]).filter(Boolean)
+    });
+  }
+  return out;
+}
+
+/* ---------- Pasang teks ke dalam balon ---------- */
+function wrap(ctx, text, maxW) {
+  const lines = []; let cur = '';
+  for (const w of text.split(/\s+/)) {
+    let word = w;
+    while (ctx.measureText(word).width > maxW && word.length > 1) {   // pecah kata terlalu panjang
+      let i = word.length - 1; while (i > 1 && ctx.measureText(word.slice(0, i) + '-').width > maxW) i--;
+      if (cur) { lines.push(cur); cur = ''; }
+      lines.push(word.slice(0, i) + '-'); word = word.slice(i);
+    }
+    const test = cur ? cur + ' ' + word : word;
+    if (ctx.measureText(test).width <= maxW) cur = test; else { if (cur) lines.push(cur); cur = word; }
+  }
+  if (cur) lines.push(cur); return lines;
+}
+function drawFit(ctx, text, r) {
+  const fam = '"Comic Neue","Comic Sans MS","Segoe UI",Arial,sans-serif';
+  let fs = Math.min(54, r.h), lines, lh;
+  for (; fs >= 9; fs--) {
+    ctx.font = `bold ${fs}px ${fam}`; lh = fs * 1.15; lines = wrap(ctx, text, r.w);
+    if (lines.length * lh <= r.h) break;
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();   // tidak pernah keluar dari balon
+  ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const y0 = r.y + (r.h - lines.length * lh) / 2 + lh / 2;
+  lines.forEach((l, i) => ctx.fillText(l, r.x + r.w / 2, y0 + i * lh));
+  ctx.restore();
+}
+
+/* ---------- Proses satu halaman ---------- */
+async function doPage(num, target) {
+  const pg = await pdf.getPage(num), v0 = pg.getViewport({ scale: 1 });
+  const vp = pg.getViewport({ scale: Math.min(4, Math.max(1, target / v0.width)) });
+  const cv = document.createElement('canvas'); cv.width = vp.width | 0; cv.height = vp.height | 0;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+  pg.cleanup();
+  const bubbles = detect(cv); let i = 0;
+  for (const b of bubbles) {
+    if (stop) break;
+    log(`Halaman ${num}: balon ${++i}/${bubbles.length}`); await tick();
+    const pad = 4, c = document.createElement('canvas');
+    c.width = Math.ceil(b.bw) + pad*2; c.height = Math.ceil(b.bh) + pad*2;
+    const cc = c.getContext('2d'); cc.fillStyle = '#fff'; cc.fillRect(0, 0, c.width, c.height);
+    cc.drawImage(cv, b.bx, b.by, b.bw, b.bh, pad, pad, b.bw, b.bh);
+    const vert = b.bh >= b.bw * .9;
+    const ocr = async v => (await (v ? M.v : await getH()).recognize(c)).data.text;
+    let jp = cleanJP(await ocr(vert));
+    if (!isJP(jp)) jp = cleanJP(await ocr(!vert));
+    c.width = c.height = 0;                        // bebaskan memori kanvas (penting di iOS)
+    if (!isJP(jp)) continue;                       // bukan dialog, biarkan apa adanya
+    let id; try { id = await translate(jp); } catch { continue; }
+    if (!id || !id.trim()) continue;
+    ctx.fillStyle = '#fff';
+    for (const [y, xa, xb, h] of b.rows) ctx.fillRect(xa, y, xb - xa, h);   // hapus teks Jepang
+    drawFit(ctx, id.trim(), b.rect);
+  }
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', .85));
+  const w = cv.width, h = cv.height, tc = document.createElement('canvas');
+  tc.width = 200; tc.height = Math.round(200 * h / w); tc.getContext('2d').drawImage(cv, 0, 0, tc.width, tc.height);
+  const thumb = tc.toDataURL('image/jpeg', .6); tc.width = tc.height = 0; cv.width = cv.height = 0;
+  return { num, blob, w, h, thumb };
+}
+
+/* ---------- Alur utama ---------- */
+$('#go').onclick = async () => {
+  if (running) { stop = true; log('Menghentikan setelah balon ini…'); return; }
+  const a = Math.max(1, +$('#from').value || 1), z = Math.min(pdf.numPages, +$('#to').value || pdf.numPages);
+  if (a > z) { log('Rentang halaman tidak valid.'); return; }
+  running = true; stop = false; $('#go').textContent = 'Berhenti'; $('#dl').disabled = true;
+  results.forEach(r => URL.revokeObjectURL(r.url)); results = []; $('#grid').innerHTML = ''; $('#pb').style.width = '0';
+  try {
+    await loadModels();
+    for (let p = a; p <= z && !stop; p++) {
+      const r = await doPage(p, +$('#res').value);
+      r.url = URL.createObjectURL(r.blob); results.push(r);
+      const el = document.createElement('a'); el.href = r.url; el.target = '_blank';
+      el.innerHTML = `<span>${p}</span><img src="${r.thumb}" alt="Halaman ${p}">`; $('#grid').append(el);
+      $('#pb').style.width = ((p - a + 1) / (z - a + 1) * 100) + '%';
+    }
+    log(stop ? `Dihentikan. ${results.length} halaman selesai.` : `Selesai: ${results.length} halaman.`);
+  } catch (e) {
+    console.error(e);
+    log('Gagal: ' + (e && e.message ? e.message : e) + ' — jika ini soal unduh model/jaringan, buka halaman ini dari hosting biasa atau file lokal di desktop, bukan dari preview claude.ai.');
+  }
+  running = false; $('#go').textContent = 'Mulai terjemah'; $('#dl').disabled = !results.length;
+};
+
+$('#dl').onclick = async () => {
+  if (!results.length) return;
+  $('#dl').disabled = true; log('Menyusun PDF…'); await tick();
+  const { jsPDF } = window.jspdf; let doc;
+  for (const r of results) {
+    const o = r.w > r.h ? 'l' : 'p';
+    if (!doc) doc = new jsPDF({ orientation: o, unit: 'px', format: [r.w, r.h], compress: true, hotfixes: ['px_scaling'] });
+    else doc.addPage([r.w, r.h], o);
+    doc.addImage(new Uint8Array(await r.blob.arrayBuffer()), 'JPEG', 0, 0, r.w, r.h);
+  }
+  doc.save(`${fname}-ID.pdf`); log('PDF terunduh.'); $('#dl').disabled = false;
+};
+</script>
+</body>
+</html>
